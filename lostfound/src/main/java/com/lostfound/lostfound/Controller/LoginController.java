@@ -9,15 +9,13 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
 import java.util.Optional;
-
 @RestController
 @RequestMapping("/user")
 @CrossOrigin(origins = "http://localhost:5173") // React dev port
 public class LoginController {
 
     @Autowired
-    private userRepository candidateRepository;
-
+    private userRepository userRepository;
 
     @Autowired
     private JwtUtil jwtUtil;
@@ -25,27 +23,29 @@ public class LoginController {
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> body) {
         String email = body.get("email");
-        String password = body.get("password"); // "candidate" or "interviewer"
+        String password = body.get("password");
 
-        Optional<User> candidateOpt = candidateRepository.findByEmail(email);
+        Optional<User> candidateOpt = userRepository.findByEmail(email);
 
-
-            if (candidateOpt.isPresent()) {
-                User candidate = candidateOpt.get();
-                if (!candidate.getPassword().equals(password)) {
-                    return ResponseEntity.status(400).body(Map.of(
-                            "status", "error",
-                            "message", "Invalid email or password"
-                    ));
-                }
-                String token = jwtUtil.generateToken(candidate);
-                return ResponseEntity.ok(Map.of(
-                        "status", 200,
-                        "message", "Login successful"
-
+        if (candidateOpt.isPresent()) {
+            User candidate = candidateOpt.get();
+            if (!candidate.getPassword().equals(password)) {
+                return ResponseEntity.status(400).body(Map.of(
+                        "status", "error",
+                        "message", "Invalid email or password"
                 ));
             }
-        else {
+
+            // Generate JWT
+            String token = jwtUtil.generateToken(candidate);
+
+            // Return JWT to client
+            return ResponseEntity.ok(Map.of(
+                    "status", 200,
+                    "message", "Login successful",
+                    "token", token
+            ));
+        } else {
             return ResponseEntity.badRequest().body(Map.of(
                     "status", "error",
                     "message", "Invalid user type"
