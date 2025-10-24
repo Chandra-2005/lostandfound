@@ -27,14 +27,4 @@ public class User {
     private String email;
     private LocalDateTime createdAt;
 
-    // Auto-generate ID and timestamp if not provided
-    public void init() {
-        if (this.id == null || this.id.isEmpty()) {
-            this.id = UUID.randomUUID().toString();
-        }
-        if (this.createdAt == null) {
-            this.createdAt = LocalDateTime.now();
-        }
-    }
-
 }
