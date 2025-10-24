@@ -1,4 +1,4 @@
-package com.lostfound.lostfound.Controller.Utils;
+package com.lostfound.lostfound.Utils;
 
 import com.lostfound.lostfound.Model.User;
 import io.jsonwebtoken.Claims;

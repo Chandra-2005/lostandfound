@@ -1,8 +1,8 @@
 package com.lostfound.lostfound.service;
 
-import com.lostfound.lostfound.Controller.Utils.JwtUtil;
 import com.lostfound.lostfound.Model.User;
 import com.lostfound.lostfound.Repository.userRepository;
+import com.lostfound.lostfound.Utils.JwtUtil;
 import org.springframework.stereotype.Service;
 
 import java.util.Map;
