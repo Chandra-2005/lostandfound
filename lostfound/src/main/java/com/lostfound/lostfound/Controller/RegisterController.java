@@ -1,6 +1,6 @@
 package com.lostfound.lostfound.Controller;
 
-import com.lostfound.lostfound.Controller.Utils.JwtUtil;
+import com.lostfound.lostfound.Utils.JwtUtil;
 import com.lostfound.lostfound.Model.User;
 import com.lostfound.lostfound.service.RegisterService;
 import org.springframework.beans.factory.annotation.Autowired;
