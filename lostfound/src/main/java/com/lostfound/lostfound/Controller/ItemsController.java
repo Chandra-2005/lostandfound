@@ -48,7 +48,7 @@ public class ItemsController {
             };
 
             // Upload image to Supabase
-            String imageUrl = supabaseUtil.uploadFile(file, bucket);
+            String imageUrl = supabaseUtil.uploadFile(file, bucket, userid);
 
             // Save item in MongoDB
             Items item = Items.builder()
@@ -80,13 +80,17 @@ public class ItemsController {
         }
     }
 
+    // 🔍 Fetch items by type (LOST / FOUND) for the logged-in user
     @GetMapping("/show/{type}")
     public ResponseEntity<?> showItemsByType(
             @RequestHeader("Authorization") String token,
             @PathVariable String type
     ) {
         try {
+            // 1️⃣ Extract userId from JWT
             String userid = jwtUtil.getUserID(token);
+
+            // 2️⃣ Find items in MongoDB by userid and type
             List<Items> items = itemsRepository.findByUseridAndType(userid, type.toUpperCase());
 
             return ResponseEntity.ok(Map.of(
@@ -94,6 +98,7 @@ public class ItemsController {
                     "message", type.toUpperCase() + " items fetched successfully",
                     "data", items
             ));
+
         } catch (Exception e) {
             return ResponseEntity.status(500).body(Map.of(
                     "status", 500,
@@ -101,4 +106,32 @@ public class ItemsController {
             ));
         }
     }
+
+    // 🔍 Fetch LOST items of other users
+    @GetMapping("/lost/others")
+    public ResponseEntity<?> showLostItemsOfOthers(
+            @RequestHeader("Authorization") String token
+    ) {
+        try {
+            // 1️⃣ Get logged-in user's ID from JWT
+            String userid = jwtUtil.getUserID(token);
+
+            // 2️⃣ Fetch items where type = LOST and userid != logged-in user
+            List<Items> items = itemsRepository.findByTypeAndUseridNot("LOST", userid);
+
+            return ResponseEntity.ok(Map.of(
+                    "status", 200,
+                    "message", "LOST items of other users fetched successfully",
+                    "data", items
+            ));
+
+        } catch (Exception e) {
+            return ResponseEntity.status(500).body(Map.of(
+                    "status", 500,
+                    "message", e.getMessage()
+            ));
+        }
+    }
+
+
 }
