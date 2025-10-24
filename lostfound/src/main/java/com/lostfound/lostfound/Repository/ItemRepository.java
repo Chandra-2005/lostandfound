@@ -10,5 +10,6 @@ import java.util.List;
 public interface ItemRepository extends MongoRepository<Items, String> {
     List<Items> findByUserid(String userid);
     List<Items> findByTypeAndUseridNot(String type, String userid);
+    List<Items> findByFoundByUserId(String finderId);
     List<Items> findByUseridAndType(String userid, String type);
 }
