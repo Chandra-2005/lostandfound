@@ -13,8 +13,7 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 
 @RestController
 @RequestMapping("/items")
@@ -25,7 +24,7 @@ public class ItemsController {
     private ItemRepository itemsRepository;
 
     @Autowired
-    private userRepository userRepository; // To fetch finder info
+    private userRepository userRepository;
 
     @Autowired
     private JwtUtil jwtUtil;
@@ -40,58 +39,49 @@ public class ItemsController {
     @PostMapping("/add")
     public ResponseEntity<?> addItem(
             @RequestHeader("Authorization") String token,
-            @RequestParam("file") MultipartFile file,
+            @RequestParam("file") List<MultipartFile> files,
             @RequestParam("name") String name,
             @RequestParam("type") String type,
+            @RequestParam("itemtype") String itemtype,
             @RequestParam("description") String description,
             @RequestParam("location") String location,
             @RequestParam("status") String status,
             @RequestParam("phone") String phone,
             @RequestParam("address") String address,
             @RequestParam("email") String email
-    ) {
-        try {
-            String userid = jwtUtil.getUserID(token);
+    ) throws IOException {
 
-            // Determine bucket
-            String bucket = switch (type.toLowerCase()) {
-                case "lost" -> "lost";
-                case "found" -> "found";
-                default -> throw new RuntimeException("Invalid type: must be lost or found");
-            };
+        String userid = jwtUtil.getUserID(token);
+        String bucket = type.equalsIgnoreCase("lost") ? "lost" : "found";
 
-            // Upload image to Supabase
-            String imageUrl = supabaseUtil.uploadFile(file, bucket, userid);
-
-            // Save item in MongoDB
-            Items item = Items.builder()
-                    .userid(userid)
-                    .name(name)
-                    .type(type.toUpperCase())
-                    .description(description)
-                    .location(location)
-                    .status(status)
-                    .phone(phone)
-                    .address(address)
-                    .email(email)
-                    .imageUrl(imageUrl)
-                    .build();
-
-            item.init();
-            Items saved = itemsRepository.save(item);
-
-            return ResponseEntity.ok(Map.of(
-                    "status", 200,
-                    "message", "Item added successfully",
-                    "data", saved
-            ));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of(
-                    "status", 500,
-                    "message", e.getMessage()
-            ));
+        List<String> uploadedUrls = new ArrayList<>();
+        for (MultipartFile file : files) {
+            String url = supabaseUtil.uploadFile(file, bucket, userid);
+            uploadedUrls.add(url);
         }
+
+        Items item = Items.builder()
+                .userid(userid)
+                .name(name)
+                .type(type.toUpperCase())
+                .itemtype(itemtype.toUpperCase())
+                .description(description)
+                .location(location)
+                .status(status)
+                .phone(phone)
+                .address(address)
+                .email(email)
+                .imageUrl(uploadedUrls)
+                .build();
+
+        item.init();
+        Items saved = itemsRepository.save(item);
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "message", "Item added successfully",
+                "data", saved
+        ));
     }
 
     // ===================== Show items by type for logged-in user =====================
@@ -104,8 +94,8 @@ public class ItemsController {
             String userid = jwtUtil.getUserID(token);
             List<Items> items = itemsRepository.findByUseridAndType(userid, type.toUpperCase());
 
-            // Populate finder info if validated
             for (Items item : items) {
+                //  Add finder contact details when item is validated
                 if (item.isValidated() && item.getFoundByUserId() != null) {
                     User finder = userRepository.findById(item.getFoundByUserId()).orElse(null);
                     if (finder != null) {
@@ -128,56 +118,12 @@ public class ItemsController {
             ));
         }
     }
-
-    // ===================== Show LOST items of other users =====================
-    @GetMapping("/lost/others")
-    public ResponseEntity<?> showLostItemsOfOthers(@RequestHeader("Authorization") String token) {
-        try {
-            String userid = jwtUtil.getUserID(token);
-            List<Items> items = itemsRepository.findByTypeAndUseridNot("LOST", userid);
-            return ResponseEntity.ok(Map.of(
-                    "status", 200,
-                    "message", "LOST items of other users fetched successfully",
-                    "data", items
-            ));
-
-        } catch (Exception e) {
-            return ResponseEntity.status(500).body(Map.of(
-                    "status", 500,
-                    "message", e.getMessage()
-            ));
-        }
-    }
-
-    // ===================== Mark item as found =====================
-    @PostMapping("/found/{itemId}")
-    public ResponseEntity<?> markFound(
-            @RequestHeader("Authorization") String token,
-            @PathVariable String itemId
-    ) {
-        String finderId = jwtUtil.getUserID(token);
-        Items item = itemsRepository.findById(itemId)
-                .orElseThrow(() -> new RuntimeException("Item not found"));
-
-        if (item.getUserid().equals(finderId))
-            return ResponseEntity.badRequest().body(Map.of("status", 400, "message", "Cannot mark your own item as found"));
-
-        item.setStatus("FOUND");
-        item.setFoundByUserId(finderId);
-        itemsRepository.save(item);
-
-        notificationService.sendNotification(item.getUserid(),
-                "Your lost item '" + item.getName() + "' has been found! Upload proof to validate.");
-
-        return ResponseEntity.ok(Map.of("status", 200, "message", "Marked as found and owner notified"));
-    }
-
     // ===================== Upload proof =====================
     @PostMapping("/upload-proof/{itemId}")
     public ResponseEntity<?> uploadProof(
             @RequestHeader("Authorization") String token,
             @PathVariable String itemId,
-            @RequestParam("file") MultipartFile file
+            @RequestParam("files") List<MultipartFile> files
     ) throws IOException {
 
         String userId = jwtUtil.getUserID(token);
@@ -186,67 +132,181 @@ public class ItemsController {
 
         boolean isOwner = userId.equals(item.getUserid());
         boolean isFinder = userId.equals(item.getFoundByUserId());
+        System.out.println("isOwner: " + isOwner + " | isFinder: " + isFinder);
 
         if (!isOwner && !isFinder)
             return ResponseEntity.status(403).body(Map.of("status", 403, "message", "Not authorized"));
 
-        String imageUrl = supabaseUtil.uploadFile(file, "proof", itemId + "/" + userId);
+        if (files == null || files.isEmpty())
+            return ResponseEntity.status(400).body(Map.of("status", 400, "message", "No files uploaded"));
 
+        List<String> uploadedUrls = new ArrayList<>();
+        for (MultipartFile file : files) {
+            String url = supabaseUtil.uploadFile(file, "proof", itemId + "/" + userId);
+            uploadedUrls.add(url);
+        }
+
+        // ========== OWNER UPLOADS PROOF ==========
         if (isOwner) {
-            item.setOwnerproofUrls(List.of(imageUrl));
+            if (item.getOwnerproofUrls() == null) item.setOwnerproofUrls(new ArrayList<>());
+            item.getOwnerproofUrls().addAll(uploadedUrls);
             item.setProofUploadedByOwner(true);
 
-            // Notify finder
-            notificationService.sendNotification(item.getFoundByUserId(),
-                    "Owner uploaded proof for item '" + item.getName() + "'. Please verify.");
-        } else if (isFinder) {
-            if (!item.isProofUploadedByOwner()) {
-                return ResponseEntity.status(400).body(Map.of("status", 400, "message", "Owner proof not uploaded yet"));
-            }
-            item.setFinderproofUrls(List.of(imageUrl));
-            item.setProofUploadedByFinder(true);
-            item.setValidated(true);
+            notificationService.sendNotification(
+                    item.getFoundByUserId(),
+                    "Owner uploaded proof for item '" + item.getName() + "'. Please review and validate."
+            );
+        }
 
-            // Populate finder contact in the item
+        // ========== FINDER VALIDATES ==========
+        else if (isFinder) {
+            if (!item.isProofUploadedByOwner()) {
+                return ResponseEntity.status(400).body(Map.of(
+                        "status", 400,
+                        "message", "Owner proof not uploaded yet"
+                ));
+            }
+
+            System.out.print(item.isFinderValidated());
+            item.setFinderValidated(true);
+            if (item.getFinderproofUrls() == null) item.setFinderproofUrls(new ArrayList<>());
+            item.getFinderproofUrls().addAll(uploadedUrls);
+            item.setProofUploadedByFinder(true);
+
+            // Save finder contact
             User finder = userRepository.findById(item.getFoundByUserId()).orElse(null);
             if (finder != null) {
                 item.setFinderEmail(finder.getEmail());
                 item.setFinderPhone(finder.getPhone());
             }
 
-            // Notify owner that finder validated
-            notificationService.sendNotification(item.getUserid(),
-                    "Finder validated your proof for item '" + item.getName() + "'. Contact info is now shared.");
+            notificationService.sendNotification(
+                    item.getUserid(),
+                    "Finder validated your proof for item '" + item.getName() + "'."
+            );
+        }
+
+        // ========== CHECK BOTH VALIDATED ==========
+        if (item.isFinderValidated() && item.isOwnerValidated()) {
+            System.out.print(item.isFinderValidated());
+            System.out.print(item.isOwnerValidated());
+            item.setValidated(true);
+            notificationService.sendNotification(
+                    item.getUserid(),
+                    "Item '" + item.getName() + "' has been mutually validated. Contact information is now shared."
+            );
+            notificationService.sendNotification(
+                    item.getFoundByUserId(),
+                    "Item '" + item.getName() + "' has been mutually validated. Contact information is now shared."
+            );
         }
 
         itemsRepository.save(item);
 
-        return ResponseEntity.ok(Map.of("status", 200, "message", "Proof uploaded successfully"));
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "message", "Proof uploaded successfully",
+                "uploadedUrls", uploadedUrls
+        ));
+    }
+    @PostMapping("/validate/{itemId}")
+    public ResponseEntity<?> validateProof(
+            @RequestHeader("Authorization") String token,
+            @PathVariable String itemId
+    ) {
+        String userId = jwtUtil.getUserID(token);
+        Items item = itemsRepository.findById(itemId)
+                .orElseThrow(() -> new RuntimeException("Item not found"));
+
+        boolean isOwner = userId.equals(item.getUserid());
+        if (!isOwner) {
+            return ResponseEntity.status(403).body(Map.of("status", 403, "message", "Only owner can validate"));
+        }
+
+        if (!item.isProofUploadedByOwner() || !item.isProofUploadedByFinder()) {
+            return ResponseEntity.status(400).body(Map.of(
+                    "status", 400,
+                    "message", "Both proofs must be uploaded before validation"
+            ));
+        }
+
+        // Owner validates the finder proof
+        item.setOwnerValidated(true);
+
+        if (item.isFinderValidated() && item.isOwnerValidated()) {
+            item.setValidated(true);
+
+            notificationService.sendNotification(
+                    item.getUserid(),
+                    "Item '" + item.getName() + "' has been mutually validated. Contact info shared."
+            );
+            notificationService.sendNotification(
+                    item.getFoundByUserId(),
+                    "Item '" + item.getName() + "' has been mutually validated. Contact info shared."
+            );
+        }
+
+        itemsRepository.save(item);
+
+        return ResponseEntity.ok(Map.of(
+                "status", 200,
+                "message", "Owner validated finder proof successfully",
+                "validated", item.isValidated()
+        ));
     }
 
-    // ===================== Show items found by logged-in user =====================
-    @GetMapping("/found-by-me")
-    public ResponseEntity<?> showFoundItems(
-            @RequestHeader("Authorization") String token
+    // ===================== DELETE LOST ITEM =====================
+    @DeleteMapping("/{itemId}")
+    public ResponseEntity<?> deleteItem(
+            @RequestHeader("Authorization") String token,
+            @PathVariable String itemId
     ) {
         try {
             String userId = jwtUtil.getUserID(token);
 
-            // Fetch items where logged-in user is the finder
-            List<Items> items = itemsRepository.findByFoundByUserId(userId);
+            Items item = itemsRepository.findById(itemId)
+                    .orElseThrow(() -> new RuntimeException("Item not found"));
+
+            //  Ensure only the owner can delete their item
+            if (!item.getUserid().equals(userId)) {
+                return ResponseEntity.status(403).body(Map.of(
+                        "status", 403,
+                        "message", "You are not authorized to delete this item."
+                ));
+            }
+
+            //  Optional: Remove images from Supabase storage
+            if (item.getImageUrl() != null && !item.getImageUrl().isEmpty()) {
+                for (String url : item.getImageUrl()) {
+                    try {
+                        supabaseUtil.deleteFileByUrl(url);
+                    } catch (Exception e) {
+                        System.out.println("Warning: Could not delete file " + url);
+                    }
+                }
+            }
+
+            //  Delete the item record
+            itemsRepository.delete(item);
+
+            //  Optional: Send a notification
+            notificationService.sendNotification(
+                    userId,
+                    "Your lost item '" + item.getName() + "' has been successfully deleted."
+            );
 
             return ResponseEntity.ok(Map.of(
                     "status", 200,
-                    "message", "Items found by you fetched successfully",
-                    "data", items
+                    "message", "Item removed successfully."
             ));
+
         } catch (Exception e) {
+            e.printStackTrace();
             return ResponseEntity.status(500).body(Map.of(
                     "status", 500,
-                    "message", e.getMessage()
+                    "message", "Failed to remove item: " + e.getMessage()
             ));
         }
     }
-
 
 }
