@@ -15,21 +15,21 @@ public class RegisterService{
     private userRepository userRepository;
 
 
-    public User registerUser(User candidate) throws Exception {
+    public User registerUser(User user) throws Exception {
         // Check if email already exists
-        if (userRepository.findByEmail(candidate.getEmail()).isPresent()) {
+        if (userRepository.findByEmail(user.getEmail()).isPresent()) {
             throw new Exception("Email already registered");
         }
 
-        // Generate unique candidate ID
-        candidate.setId(UUID.randomUUID().toString());
+        // Generate unique user ID
+        user.setId(UUID.randomUUID().toString());
 
         // Set created timestamp
-        candidate.setCreatedAt(LocalDateTime.now());
+        user.setCreatedAt(LocalDateTime.now());
 
         // TODO: Hash the password before saving
-        // candidate.setPassword(new BCryptPasswordEncoder().encode(candidate.getPassword()));
+        // user.setPassword(new BCryptPasswordEncoder().encode(user.getPassword()));
 
-        return userRepository.save(candidate);
+        return userRepository.save(user);
     }
 }

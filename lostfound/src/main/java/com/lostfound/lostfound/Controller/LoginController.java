@@ -11,7 +11,7 @@ import java.util.Map;
 import java.util.Optional;
 @RestController
 @RequestMapping("/user")
-@CrossOrigin(origins = "http://localhost:5173") // React dev port
+@CrossOrigin(origins = "http://localhost:5173")
 public class LoginController {
 
     @Autowired
